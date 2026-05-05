@@ -1,99 +1,85 @@
-# CFG Derivation Tree & AST Generator — Practice III
+# Práctica III – Generador de Árbol de Derivación y AST para GLC
 
-**Course:** ST0244 – Programming Languages and Computing Paradigms  
-**University:** EAFIT University — School of Applied Sciences and Engineering  
-**Lecturer:** Alexander Narváez Berrío
-
----
-
-## Team Members
-
-| Name | Student ID |
-|------|-----------|
-| Juan David García Narváez | (your ID here) |
+**Curso:** ST0244 – Lenguajes de Programación y Paradigmas de Computación  
+**Universidad:** Universidad EAFIT – Escuela de Ciencias Aplicadas e Ingeniería  
+**Docente:** Alexander Narváez Berrío
 
 ---
 
-## Project Description
+## Integrantes
 
-A GUI application that, given a **Context-Free Grammar (CFG)** and a **target expression**, produces:
-
-1. **Derivation** — step-by-step sentential forms using *left* or *right* expansion.  
-2. **Derivation Tree** — visual parse tree representing every grammar expansion.  
-3. **Abstract Syntax Tree (AST)** — simplified tree that collapses chain rules and  
-   highlights the essential syntactic structure.
+| Nombre completo | 
+|-----------------|
+| Juan David Giraldo Regino |
+| Juan José Duque Marín |
 
 ---
 
-## Technology Stack
+## Descripción
 
-| Item | Detail |
-|------|--------|
-| Language | Python 3.10+ |
-| GUI framework | PyQt5 5.15 |
-| Grammar / parsing | NLTK 3.8 (CFG + EarleyChartParser) |
-| IDE | VS Code / PyCharm |
+Aplicación con interfaz gráfica que, dada una **Gramática Libre de Contexto (GLC)** y una **expresión objetivo**, genera:
 
----
-
-## Architecture (OOP)
-
-```
-main.py              – entry point
-grammar.py           – Grammar class  (wraps NLTK CFG)
-parser_engine.py     – ParserEngine class  (wraps EarleyChartParser)
-derivation.py        – Derivation class  (left/right derivation steps)
-ast_builder.py       – ASTBuilder class  (parse tree → AST)
-tree_layout.py       – LayoutNode, compute_layout  (2-D tree positioning)
-tree_widget.py       – TreeCanvas, TreeWidget  (PyQt5 custom painting)
-main_window.py       – MainWindow  (main GUI, orchestration)
-```
+1. **Derivación** — secuencia de formas sentenciales usando expansión por izquierda o por derecha.
+2. **Árbol de derivación** — representación visual de cada paso de expansión de la gramática.
+3. **AST (Árbol de Sintaxis Abstracta)** — árbol simplificado que elimina nodos redundantes y resalta la estructura esencial de la expresión.
 
 ---
 
-## How to Run
+## Tecnología
+
+| Elemento | Detalle |
+|----------|---------|
+| Lenguaje | Python 3.10+ |
+| Interfaz gráfica | Tkinter (incluido en Python) |
+| Gramática / análisis | NLTK 3.9 — CFG + EarleyChartParser |
+| Visualización de árboles | matplotlib 3.10 + networkx 3.5 |
+| IDE | VS Code |
+
+---
+
+## Instalación y ejecución
 
 ```bash
-# 1. Install dependencies
-pip install -r requirements.txt
+# 1. Instalar dependencias
+pip install nltk matplotlib networkx
 
-# 2. Launch the application
-python main.py
+# 2. Ejecutar la aplicación
+python practica_glc.py
 ```
 
 ---
 
-## Grammar Format
+## Formato de la gramática
 
-The grammar must be written in NLTK's BNF notation:
+La gramática se escribe en notación BNF de NLTK. Los terminales van entre comillas simples:
 
 ```
-S -> NP VP
-NP -> Det N | N
-VP -> V NP | V
-Det -> 'the' | 'a'
-N -> 'dog' | 'cat'
-V -> 'chased' | 'saw'
+S -> E
+E -> E '+' T | E '-' T | T
+T -> T '*' F | T '/' F | F
+F -> '(' E ')' | 'num' | 'id'
 ```
 
-Terminals must be **quoted** (single quotes).  
-The expression is entered as **space-separated tokens** that match the quoted terminals.
+La expresión se ingresa con **tokens separados por espacios**.  
+Los números (`4`, `3.14`) se normalizan a `num` y las variables (`x`, `edad`) a `id` automáticamente.
 
 ---
 
-## Features
+## Arquitectura OOP — archivo único `practica_glc.py`
 
-- **Left derivation** — always expands the leftmost non-terminal.  
-- **Right derivation** — always expands the rightmost non-terminal.  
-- **Scrollable tree canvases** for large grammars.  
-- **Three example presets** (natural language, arithmetic, aⁿbⁿ).  
-- Supports **left-recursive grammars** (e.g. arithmetic) via Earley parsing.
+| Clase | Responsabilidad |
+|-------|----------------|
+| `ModeloGramatica` | Carga el CFG, tokeniza y analiza la expresión |
+| `GeneradorDerivacion` | Produce los pasos de derivación izquierda o derecha |
+| `GeneradorAST` | Simplifica el árbol de derivación en un AST |
+| `VisualizadorArbol` | Dibuja árboles con NetworkX y Matplotlib |
+| `Aplicacion` | Ventana principal Tkinter, orquesta todos los módulos |
 
 ---
 
-## Assessment Criteria
+## Criterios de evaluación
 
-| Criterion | Weight |
-|-----------|--------|
-| OOP solution with all features working | 70 % |
-| In-person defence | 30 % |
+| Criterio | Peso |
+|----------|------|
+| Solución OOP con todas las funcionalidades | 70 % |
+| Sustentación presencial | 30 % |
