@@ -57,34 +57,33 @@ class ModeloGramatica:
         self.gramatica = CFG.fromstring(texto)
         self.parser = EarleyChartParser(self.gramatica, trace=0)
 
-    def tokenizar(self, expresion: str) -> list[str]:
+    def tokenizar(self, expresion: str) -> tuple[list[str], list[str]]:
         """
-        Normaliza cada token de la expresión:
-          - Número  (4, 3.14)       → 'num'
-          - Variable (x, edad)      → 'id'
-          - Operador (+, -, *, /)   → sin cambio
-          - Paréntesis              → sin cambio
+        Normaliza cada token y devuelve (tokens_normalizados, valores_originales).
+          - Número  (4, 3.14)   → 'num'  (original guardado)
+          - Variable (x, edad)  → 'id'   (original guardado)
+          - Operador / paréntesis → sin cambio
         """
-        tokens = []
+        tokens, originales = [], []
         for tok in expresion.strip().split():
             if re.fullmatch(r"\d+(\.\d+)?", tok):
-                tokens.append("num")
+                tokens.append("num");  originales.append(tok)
             elif re.fullmatch(r"[a-zA-Z_]\w*", tok):
-                tokens.append("id")
+                tokens.append("id");   originales.append(tok)
             elif tok in ("+", "-", "*", "/", "(", ")"):
-                tokens.append(tok)
+                tokens.append(tok);    originales.append(tok)
             else:
                 raise ValueError(
                     f"Token no reconocido: '{tok}'\n"
                     "Separa todos los elementos con espacios. Ej: 4 + x * 3"
                 )
-        return tokens
+        return tokens, originales
 
     def parsear(self, expresion: str) -> tuple:
-        """Retorna (árbol, tokens). El árbol es None si la expresión es inválida."""
-        tokens = self.tokenizar(expresion)
+        """Retorna (árbol, tokens_normalizados, valores_originales)."""
+        tokens, originales = self.tokenizar(expresion)
         arboles = list(self.parser.parse(tokens))
-        return (arboles[0] if arboles else None), tokens
+        return (arboles[0] if arboles else None), tokens, originales
 
 
 # ─────────────────────────────────────────────────────────────────────────── #
@@ -242,6 +241,63 @@ class VisualizadorArbol:
 
 
 # ─────────────────────────────────────────────────────────────────────────── #
+# Helpers de humanización (num/id → valores reales del usuario)               #
+# ─────────────────────────────────────────────────────────────────────────── #
+
+def _humanizar_paso(paso: str, originales: list[str]) -> str:
+    """
+    Reemplaza 'num' e 'id' en una forma sentencial por los valores originales
+    del usuario, en el mismo orden de izquierda a derecha.
+    Ej: 'num + id * num'  →  '4 + x * 3'
+    """
+    nums = [t for t in originales if re.fullmatch(r"\d+(\.\d+)?", t)]
+    ids  = [t for t in originales if re.fullmatch(r"[a-zA-Z_]\w*",  t)]
+    idx_n = idx_i = 0
+    resultado = []
+    for tok in paso.split():
+        if tok == "num" and idx_n < len(nums):
+            resultado.append(nums[idx_n]); idx_n += 1
+        elif tok == "id" and idx_i < len(ids):
+            resultado.append(ids[idx_i]);  idx_i += 1
+        else:
+            resultado.append(tok)
+    return " ".join(resultado)
+
+
+def _arbol_con_valores(arbol: Tree, originales: list[str]) -> Tree:
+    """
+    Crea una copia del árbol con las hojas 'num' e 'id' reemplazadas
+    por los valores reales del usuario, en orden izquierda a derecha.
+
+    Maneja dos tipos de hoja:
+      - String puro      → árbol de derivación (NLTK nativo)
+      - Tree("num", [])  → árbol AST (GeneradorAST convierte terminales a Tree)
+    """
+    nums = [t for t in originales if re.fullmatch(r"\d+(\.\d+)?", t)]
+    ids  = [t for t in originales if re.fullmatch(r"[a-zA-Z_]\w*",  t)]
+    idx  = [0, 0]   # [idx_num, idx_id]
+
+    def reemplazar(nodo):
+        if isinstance(nodo, Tree):
+            # Hoja del AST: Tree sin hijos con etiqueta num/id
+            if not list(nodo):
+                if nodo.label() == "num" and idx[0] < len(nums):
+                    val = nums[idx[0]]; idx[0] += 1; return Tree(val, [])
+                if nodo.label() == "id"  and idx[1] < len(ids):
+                    val = ids[idx[1]];  idx[1] += 1; return Tree(val, [])
+                return nodo
+            return Tree(nodo.label(), [reemplazar(h) for h in nodo])
+        # Hoja del árbol de derivación: string puro
+        if nodo == "num" and idx[0] < len(nums):
+            val = nums[idx[0]]; idx[0] += 1; return val
+        if nodo == "id"  and idx[1] < len(ids):
+            val = ids[idx[1]];  idx[1] += 1; return val
+        return nodo
+
+    return reemplazar(arbol)
+
+
+# ─────────────────────────────────────────────────────────────────────────── #
 # Interfaz gráfica principal (Tkinter)                                        #
 # ─────────────────────────────────────────────────────────────────────────── #
 
@@ -256,6 +312,7 @@ class Aplicacion:
         # Estado
         self.arbol_derivacion: Tree | None = None
         self.arbol_ast:        Tree | None = None
+        self._originales:      list[str]   = []   # valores reales del usuario
         self.visualizador = VisualizadorArbol()
 
         self._crear_widgets()
@@ -340,7 +397,7 @@ class Aplicacion:
                 return
 
             modelo = ModeloGramatica(texto_gram)
-            self.arbol_derivacion, tokens = modelo.parsear(expresion)
+            self.arbol_derivacion, tokens, self._originales = modelo.parsear(expresion)
 
             if self.arbol_derivacion is None:
                 messagebox.showerror("Error",
@@ -351,6 +408,10 @@ class Aplicacion:
             izquierda = self.tipo.get() == "izquierda"
             pasos     = GeneradorDerivacion(self.arbol_derivacion).derivar(izquierda)
             self.arbol_ast = GeneradorAST().generar(self.arbol_derivacion)
+
+            # Árboles con valores reales (4, x… en vez de num, id)
+            arbol_visual = _arbol_con_valores(self.arbol_derivacion, self._originales)
+            ast_visual   = _arbol_con_valores(self.arbol_ast,        self._originales)
 
             # Formatear salida
             dir_label = "Derivación por la izquierda" if izquierda else "Derivación por la derecha"
@@ -363,9 +424,10 @@ class Aplicacion:
             self._escribir(f"Tokens reconocidos por la gramática:\n{' '.join(tokens)}\n")
             self._escribir("Pasos de derivación:")
             for i, paso in enumerate(pasos, start=1):
-                self._escribir(f"  Paso {i}: {paso}")
-            self._escribir(f"\nÁrbol de derivación en formato texto:\n{self.arbol_derivacion}")
-            self._escribir(f"\nÁrbol de Sintaxis Abstracta (AST) en formato texto:\n{self.arbol_ast}")
+                # Mostrar los valores reales en vez de num/id
+                self._escribir(f"  Paso {i}: {_humanizar_paso(paso, self._originales)}")
+            self._escribir(f"\nÁrbol de derivación en formato texto:\n{arbol_visual}")
+            self._escribir(f"\nÁrbol de Sintaxis Abstracta (AST) en formato texto:\n{ast_visual}")
 
             messagebox.showinfo("Listo", "Derivación, árbol y AST generados correctamente.")
 
@@ -373,18 +435,24 @@ class Aplicacion:
             messagebox.showerror("Error", str(e))
 
     def ver_arbol(self):
-        """Muestra el árbol de derivación en una ventana Matplotlib."""
+        """Muestra el árbol de derivación con los valores reales del usuario."""
         if self.arbol_derivacion is None:
             messagebox.showwarning("Advertencia", "Primero presiona 'Generar'.")
             return
-        self.visualizador.mostrar(self.arbol_derivacion, "Árbol de Derivación")
+        self.visualizador.mostrar(
+            _arbol_con_valores(self.arbol_derivacion, self._originales),
+            "Árbol de Derivación"
+        )
 
     def ver_ast(self):
-        """Muestra el AST en una ventana Matplotlib."""
+        """Muestra el AST con los valores reales del usuario."""
         if self.arbol_ast is None:
             messagebox.showwarning("Advertencia", "Primero presiona 'Generar'.")
             return
-        self.visualizador.mostrar(self.arbol_ast, "Árbol de Sintaxis Abstracta (AST)")
+        self.visualizador.mostrar(
+            _arbol_con_valores(self.arbol_ast, self._originales),
+            "Árbol de Sintaxis Abstracta (AST)"
+        )
 
     def _escribir(self, texto: str):
         self.texto.insert(tk.END, texto + "\n")
